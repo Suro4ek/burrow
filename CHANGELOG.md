@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `install.sh`: one-line install of a prebuilt binary with checksum
+  verification, no Go or Docker required.
+
 ## [0.1.0] - 2026-08-08
 
 First public release.

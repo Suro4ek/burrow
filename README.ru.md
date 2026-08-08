@@ -34,24 +34,50 @@ connected to tun.example.com:7000
 
 ## Установка
 
-**Агент** (машина, которую открываем):
+**Агент** — на машине, которую открываем:
 
 ```sh
-go install github.com/suro4ek/burrow/cmd/burrow@latest
+curl -sSLf https://raw.githubusercontent.com/Suro4ek/burrow/main/install.sh | sh
 ```
 
-**Сервер** (VPS):
+**Сервер** — на VPS:
 
 ```sh
-go install github.com/suro4ek/burrow/cmd/burrowd@latest
+curl -sSLf https://raw.githubusercontent.com/Suro4ek/burrow/main/install.sh | sh -s -- burrowd
 ```
 
-Либо готовые бинарники из [Releases](https://github.com/suro4ek/burrow/releases),
-либо контейнер:
+Ни Go, ни Docker, ни сборки. Скрипт сам определяет ОС и архитектуру, сверяет
+SHA-256 с опубликованными чек-суммами и кладёт бинарник в `/usr/local/bin` —
+или в `~/.local/bin`, если ты не root, вместо того чтобы требовать sudo.
+
+```sh
+BURROW_VERSION=v0.1.1 ...      # поставить конкретную версию, а не последнюю
+BURROW_INSTALL_DIR=~/bin ...   # поставить в другое место
+```
+
+Опасаться `curl | sh` — нормально. Скрипт короткий, можно прочитать:
+[`install.sh`](install.sh).
+
+<details>
+<summary>Другие способы установки</summary>
+
+Готовые архивы под Linux, macOS, FreeBSD и Windows приложены к каждому
+[релизу](https://github.com/suro4ek/burrow/releases) вместе с `checksums.txt`.
+
+Из исходников, если есть Go:
+
+```sh
+go install github.com/suro4ek/burrow/cmd/burrow@latest    # агент
+go install github.com/suro4ek/burrow/cmd/burrowd@latest   # сервер
+```
+
+Сервер также собран в контейнер:
 
 ```sh
 docker pull ghcr.io/suro4ek/burrow:latest
 ```
+
+</details>
 
 ## Попробовать локально за две минуты
 

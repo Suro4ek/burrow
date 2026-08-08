@@ -40,24 +40,51 @@ connected to tun.example.com:7000
 
 ## Install
 
-**Agent** (the machine you want to expose):
+**Agent** — on the machine you want to expose:
 
 ```sh
-go install github.com/suro4ek/burrow/cmd/burrow@latest
+curl -sSLf https://raw.githubusercontent.com/Suro4ek/burrow/main/install.sh | sh
 ```
 
-**Server** (your VPS):
+**Server** — on your VPS:
 
 ```sh
-go install github.com/suro4ek/burrow/cmd/burrowd@latest
+curl -sSLf https://raw.githubusercontent.com/Suro4ek/burrow/main/install.sh | sh -s -- burrowd
 ```
 
-Or grab prebuilt binaries from [Releases](https://github.com/suro4ek/burrow/releases),
-or run the server as a container:
+No Go, no Docker, no build step. The script picks the build for your OS and
+CPU, verifies its SHA-256 against the published checksums, and installs into
+`/usr/local/bin` — or `~/.local/bin` if you are not root, rather than demanding
+sudo.
+
+```sh
+BURROW_VERSION=v0.1.1 ...      # pin a version instead of taking the latest
+BURROW_INSTALL_DIR=~/bin ...   # install somewhere else
+```
+
+Piping a script into a shell is a reasonable thing to be wary of. Read it first
+if you like — it is short: [`install.sh`](install.sh).
+
+<details>
+<summary>Other ways to install</summary>
+
+Prebuilt archives for Linux, macOS, FreeBSD and Windows are attached to every
+[release](https://github.com/suro4ek/burrow/releases), with `checksums.txt`.
+
+From source, if you have Go:
+
+```sh
+go install github.com/suro4ek/burrow/cmd/burrow@latest    # agent
+go install github.com/suro4ek/burrow/cmd/burrowd@latest   # server
+```
+
+The server also ships as a container image:
 
 ```sh
 docker pull ghcr.io/suro4ek/burrow:latest
 ```
+
+</details>
 
 ## Try it locally in two minutes
 
