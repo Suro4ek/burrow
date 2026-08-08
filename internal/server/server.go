@@ -82,7 +82,17 @@ func (srv *Server) AdminEnabled() bool { return srv.adminH != nil }
 
 // Run serves until ctx is cancelled or a listener fails.
 func (srv *Server) Run(ctx context.Context) error {
-	ctlLn, err := srv.listenControl()
+	// One reloader shared by every TLS listener: the certificate is the same,
+	// and sharing means a renewal is picked up everywhere at once.
+	var certs *certReloader
+	if srv.cfg.TLSCert != "" {
+		var err error
+		if certs, err = newCertReloader(srv.cfg.TLSCert, srv.cfg.TLSKey); err != nil {
+			return err
+		}
+	}
+
+	ctlLn, err := srv.listenControl(certs)
 	if err != nil {
 		return err
 	}
@@ -94,14 +104,22 @@ func (srv *Server) Run(ctx context.Context) error {
 	}
 	defer httpLn.Close()
 
-	httpSrv := &http.Server{
-		Handler: srv,
-		// No WriteTimeout on purpose: it would cut off websockets, SSE and
-		// long downloads, which are exactly what people tunnel.
-		ReadHeaderTimeout: 20 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		ErrorLog:          slog.NewLogLogger(srv.log.Handler(), slog.LevelDebug),
+	newHTTPServer := func(h http.Handler) *http.Server {
+		return &http.Server{
+			Handler: h,
+			// No WriteTimeout on purpose: it would cut off websockets, SSE and
+			// long downloads, which are exactly what people tunnel.
+			ReadHeaderTimeout: 20 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			ErrorLog:          slog.NewLogLogger(srv.log.Handler(), slog.LevelDebug),
+		}
 	}
+
+	plain := http.Handler(srv)
+	if srv.cfg.RedirectHTTPS {
+		plain = http.HandlerFunc(srv.redirectToHTTPS)
+	}
+	httpSrv := newHTTPServer(plain)
 
 	srv.ctlAddr, srv.httpAddr = ctlLn.Addr(), httpLn.Addr()
 	close(srv.ready)
@@ -111,6 +129,7 @@ func (srv *Server) Run(ctx context.Context) error {
 		"control", srv.ctlAddr.String(),
 		"control_tls", srv.cfg.TLSCert != "",
 		"http", srv.httpAddr.String(),
+		"https", srv.cfg.HTTPSAddr,
 		"base_domain", srv.cfg.BaseDomain,
 		"tcp_range", fmt.Sprintf("%d-%d", srv.cfg.TCPPortMin, srv.cfg.TCPPortMax),
 		"admin", srv.AdminEnabled(),
@@ -123,13 +142,32 @@ func (srv *Server) Run(ctx context.Context) error {
 		srv.log.Info("admin panel disabled: set -admin-password to enable it")
 	}
 
-	errc := make(chan error, 3)
+	errc := make(chan error, 4)
 	go func() {
 		errc <- fmt.Errorf("http listener: %w", httpSrv.Serve(httpLn))
 	}()
 	go func() {
 		errc <- fmt.Errorf("control listener: %w", srv.acceptControl(ctlLn))
 	}()
+
+	// Serving TLS here is what lets a wildcard certificate replace a reverse
+	// proxy entirely: one binary terminates the tunnels and the panel.
+	var httpsSrv *http.Server
+	if srv.cfg.HTTPSAddr != "" {
+		rawLn, err := net.Listen("tcp", srv.cfg.HTTPSAddr)
+		if err != nil {
+			return fmt.Errorf("listen https %s: %w", srv.cfg.HTTPSAddr, err)
+		}
+		httpsLn := tls.NewListener(rawLn, certs.tlsConfig())
+		defer httpsLn.Close()
+
+		httpsSrv = newHTTPServer(srv)
+		srv.log.Info("https listener", "addr", rawLn.Addr().String(),
+			"redirect_from_http", srv.cfg.RedirectHTTPS)
+		go func() {
+			errc <- fmt.Errorf("https listener: %w", httpsSrv.Serve(httpsLn))
+		}()
+	}
 
 	// The optional second admin listener answers on any Host, so it works
 	// through an SSH port-forward where the Host header says "localhost".
@@ -165,6 +203,9 @@ func (srv *Server) Run(ctx context.Context) error {
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutCtx)
+	if httpsSrv != nil {
+		_ = httpsSrv.Shutdown(shutCtx)
+	}
 	if adminSrv != nil {
 		_ = adminSrv.Shutdown(shutCtx)
 	}
@@ -175,23 +216,29 @@ func (srv *Server) Run(ctx context.Context) error {
 	return nil
 }
 
-// listenControl opens the agent-facing listener, wrapped in TLS when
-// configured.
-func (srv *Server) listenControl() (net.Listener, error) {
+// listenControl opens the agent-facing listener, wrapped in TLS when a
+// certificate is available.
+func (srv *Server) listenControl(certs *certReloader) (net.Listener, error) {
 	ln, err := net.Listen("tcp", srv.cfg.ControlAddr)
 	if err != nil {
 		return nil, fmt.Errorf("listen control %s: %w", srv.cfg.ControlAddr, err)
 	}
-	if srv.cfg.TLSCert == "" {
+	if certs == nil {
 		srv.log.Warn("control listener has no TLS: agent tokens will cross the network in plaintext")
 		return ln, nil
 	}
-	reloader, err := newCertReloader(srv.cfg.TLSCert, srv.cfg.TLSKey)
-	if err != nil {
-		ln.Close()
-		return nil, err
+	return tls.NewListener(ln, certs.tlsConfig()), nil
+}
+
+// redirectToHTTPS sends plain HTTP traffic to the TLS listener.
+func (srv *Server) redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
+	host := hostOnly(r.Host)
+	// Keep a non-standard HTTPS port in the redirect, or the browser would be
+	// sent to :443 where nothing is listening.
+	if _, port, err := net.SplitHostPort(srv.cfg.HTTPSAddr); err == nil && port != "443" {
+		host = net.JoinHostPort(host, port)
 	}
-	return tls.NewListener(ln, reloader.tlsConfig()), nil
+	http.Redirect(w, r, "https://"+host+r.URL.RequestURI(), http.StatusMovedPermanently)
 }
 
 // acceptControl runs the agent accept loop.

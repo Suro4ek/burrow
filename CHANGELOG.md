@@ -11,6 +11,8 @@ All notable changes to this project are documented here. The format follows
 - `install.sh`: one-line install of a prebuilt binary with checksum
   verification, no Go or Docker required.
 - Homebrew casks published to `suro4ek/tap` on every release.
+- `-https` and `-redirect-https`: burrowd terminates TLS for tunnels and the
+  panel itself, so a wildcard certificate removes the need for a reverse proxy.
 
 ## [0.1.0] - 2026-08-08
 

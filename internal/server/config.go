@@ -13,6 +13,14 @@ type Config struct {
 	ControlAddr string
 	// HTTPAddr is where end users' HTTP requests arrive.
 	HTTPAddr string
+	// HTTPSAddr optionally serves the same traffic over TLS, using TLSCert
+	// and TLSKey. With a wildcard certificate this removes the need for a
+	// reverse proxy in front of the server.
+	HTTPSAddr string
+	// RedirectHTTPS turns the plain HTTP listener into a permanent redirect.
+	// Safe with DNS-01 certificates; do not use it if something on port 80
+	// still has to answer an HTTP-01 challenge.
+	RedirectHTTPS bool
 	// BaseDomain is the wildcard zone, e.g. "tun.example.com". Requests for
 	// <sub>.tun.example.com are routed to the agent holding <sub>.
 	BaseDomain string
@@ -103,6 +111,17 @@ func (c *Config) Validate() error {
 	}
 	if (c.TLSCert == "") != (c.TLSKey == "") {
 		return fmt.Errorf("tls-cert and tls-key must be set together")
+	}
+	if c.HTTPSAddr != "" && c.TLSCert == "" {
+		return fmt.Errorf("https requires tls-cert and tls-key")
+	}
+	if c.RedirectHTTPS && c.HTTPSAddr == "" {
+		return fmt.Errorf("redirect-https requires an https listener")
+	}
+	// Serving TLS and then advertising http:// URLs would hand every agent a
+	// link that redirects, so follow the listener unless told otherwise.
+	if c.HTTPSAddr != "" && c.PublicScheme == "http" {
+		c.PublicScheme = "https"
 	}
 	if c.TokensFile == "" {
 		return fmt.Errorf("tokens file is required")

@@ -123,12 +123,22 @@ tun.example.com.    A    203.0.113.10
 
 Нужен **wildcard**-сертификат, а его **нельзя** получить через HTTP-01
 challenge — только через DNS-01, то есть требуется API-токен DNS-провайдера.
-Проще всего отдать это Caddy, а он проксирует на burrowd по loopback: рабочий
-пример в [`deploy/Caddyfile`](deploy/Caddyfile).
 
-Control-порту (7000) нужен свой TLS: агенты шлют туда токен. Укажи
-`-tls-cert` / `-tls-key` на тот же сертификат. Перезапуск при обновлении не
-нужен — burrowd перечитывает файлы, когда меняется их mtime.
+С готовым сертификатом burrowd терминирует TLS сам, реверс-прокси не нужен:
+
+```sh
+burrowd -domain tun.example.com \
+  -https :443 -redirect-https \
+  -tls-cert /etc/burrowd/tls/fullchain.pem \
+  -tls-key  /etc/burrowd/tls/privkey.pem
+```
+
+Тот же сертификат защищает control-порт, а продление подхватывается без
+рестарта — burrowd перечитывает файлы при изменении их mtime.
+
+[lego](https://go-acme.github.io/lego/) автоматизирует DNS-01 для большинства
+провайдеров. Если твоего нет — в [`deploy/Caddyfile`](deploy/Caddyfile) лежит
+вариант с реверс-прокси.
 
 ### 3. Запуск
 
@@ -300,6 +310,8 @@ deploy/           systemd unit, Caddyfile, пример tokens.json
 | `-domain` | — | wildcard-зона, обязателен |
 | `-control` | `:7000` | листенер для агентов |
 | `-http` | `:80` | листенер пользовательского трафика |
+| `-https` | — | TLS-листенер, требует `-tls-cert`/`-tls-key` |
+| `-redirect-https` | `false` | редирект с http на https |
 | `-scheme` | `http` | схема в публикуемых URL, за Caddy ставь `https` |
 | `-tcp-range` | `20000-30000` | пул публичных TCP-портов |
 | `-tls-cert` / `-tls-key` | — | TLS на control-порту |

@@ -3,9 +3,16 @@ package burrow_test
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -74,15 +81,24 @@ func startServer(t *testing.T) *server.Server {
 // startAgent connects an agent and blocks until the server grants its tunnels.
 func startAgent(t *testing.T, srv *server.Server, specs ...client.TunnelSpec) []proto.TunnelResp {
 	t.Helper()
+	return startAgentTLS(t, srv, false, specs...)
+}
+
+// startAgentTLS is startAgent with control over the transport, for servers
+// configured with a certificate.
+func startAgentTLS(t *testing.T, srv *server.Server, useTLS bool, specs ...client.TunnelSpec) []proto.TunnelResp {
+	t.Helper()
 
 	ready := make(chan []proto.TunnelResp, 1)
 	c, err := client.New(client.Config{
 		ServerAddr: srv.ControlAddr().String(),
 		Token:      testToken,
-		TLS:        false,
-		Tunnels:    specs,
-		Version:    "test",
-		Log:        testLogger(t),
+		TLS:        useTLS,
+		// The test certificate is self-signed, so verification would fail.
+		Insecure: useTLS,
+		Tunnels:  specs,
+		Version:  "test",
+		Log:      testLogger(t),
 		OnReady: func(granted []proto.TunnelResp) {
 			select {
 			case ready <- granted:
@@ -399,4 +415,120 @@ func tcpEchoOrigin(t *testing.T) string {
 		}
 	}()
 	return ln.Addr().String()
+}
+
+// testCert writes a throwaway self-signed certificate and returns its paths.
+func testCert(t *testing.T, hosts ...string) (certPath, keyPath string) {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: hosts[0]},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:              hosts,
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	certPath = filepath.Join(dir, "cert.pem")
+	keyPath = filepath.Join(dir, "key.pem")
+
+	cf, err := os.Create(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pem.Encode(cf, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+		t.Fatal(err)
+	}
+	cf.Close()
+
+	kb, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kf, err := os.Create(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pem.Encode(kf, &pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}); err != nil {
+		t.Fatal(err)
+	}
+	kf.Close()
+
+	return certPath, keyPath
+}
+
+// TestHTTPSTunnel covers serving tunnels over TLS directly, which is what lets
+// a wildcard certificate replace a reverse proxy.
+func TestHTTPSTunnel(t *testing.T) {
+	origin := httpOrigin(t)
+
+	tokensPath := filepath.Join(t.TempDir(), "tokens.json")
+	tokens := fmt.Sprintf(`[{"token":%q,"name":"test"}]`, testToken)
+	if err := os.WriteFile(tokensPath, []byte(tokens), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	certPath, keyPath := testCert(t, baseDomain, "*."+baseDomain)
+
+	cfg := server.DefaultConfig()
+	cfg.ControlAddr = "127.0.0.1:0"
+	cfg.HTTPAddr = "127.0.0.1:0"
+	cfg.HTTPSAddr = "127.0.0.1:0"
+	cfg.BaseDomain = baseDomain
+	cfg.TokensFile = tokensPath
+	cfg.TLSCert, cfg.TLSKey = certPath, keyPath
+	cfg.RedirectHTTPS = true
+
+	srv, err := server.New(cfg, testLogger(t), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	select {
+	case <-srv.Ready():
+	case <-time.After(5 * time.Second):
+		t.Fatal("server never became ready")
+	}
+
+	// An https listener should flip published URLs to https automatically.
+	granted := startAgentTLS(t, srv, true, client.TunnelSpec{
+		Proto: proto.ProtoHTTP, LocalAddr: origin, Subdomain: "secure",
+	})
+	if want := "https://secure." + baseDomain; granted[0].URL != want {
+		t.Errorf("URL = %q, want %q", granted[0].URL, want)
+	}
+
+	// The plain listener must redirect rather than serve.
+	noRedirect := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	req, _ := http.NewRequest("GET", "http://"+srv.HTTPAddr().String()+"/x", nil)
+	req.Host = "secure." + baseDomain
+	resp, err := noRedirect.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMovedPermanently {
+		t.Errorf("http status = %d, want 301", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "https://secure."+baseDomain) {
+		t.Errorf("Location = %q", loc)
+	}
 }

@@ -132,13 +132,25 @@ tun.example.com.    A    203.0.113.10
 
 You need a **wildcard** certificate, and a wildcard cannot be issued over the
 HTTP-01 challenge — only DNS-01, which needs an API token for your DNS
-provider. The simplest path is to let Caddy handle it and proxy to burrowd on
-loopback; [`deploy/Caddyfile`](deploy/Caddyfile) is a working example.
+provider.
 
-The control port (7000) needs its own TLS, because agents send their token to
-it. Point `-tls-cert` / `-tls-key` at the same certificate. No restart is
-needed when it renews — burrowd re-reads the files when their modification time
+With the certificate in hand, burrowd terminates TLS itself — no reverse proxy
+needed:
+
+```sh
+burrowd -domain tun.example.com \
+  -https :443 -redirect-https \
+  -tls-cert /etc/burrowd/tls/fullchain.pem \
+  -tls-key  /etc/burrowd/tls/privkey.pem
+```
+
+The same certificate secures the control port, and renewals are picked up
+without a restart: burrowd re-reads the files when their modification time
 changes.
+
+[lego](https://go-acme.github.io/lego/) automates the DNS-01 dance for most
+providers. If yours is not supported, [`deploy/Caddyfile`](deploy/Caddyfile)
+shows the reverse-proxy alternative.
 
 ### 3. Run it
 
@@ -311,6 +323,8 @@ deploy/           systemd unit, Caddyfile, example tokens.json
 | `-domain` | — | wildcard base domain, required |
 | `-control` | `:7000` | listener for agents |
 | `-http` | `:80` | listener for end-user traffic |
+| `-https` | — | TLS listener for end-user traffic, needs `-tls-cert`/`-tls-key` |
+| `-redirect-https` | `false` | make the http listener redirect to https |
 | `-scheme` | `http` | scheme used in published URLs; set `https` behind Caddy |
 | `-tcp-range` | `20000-30000` | public TCP port pool |
 | `-tls-cert` / `-tls-key` | — | TLS for the control listener |

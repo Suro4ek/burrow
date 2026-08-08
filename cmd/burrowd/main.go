@@ -44,6 +44,8 @@ func run() error {
 	)
 	flag.StringVar(&cfg.ControlAddr, "control", cfg.ControlAddr, "listen address for tunnel agents")
 	flag.StringVar(&cfg.HTTPAddr, "http", cfg.HTTPAddr, "listen address for end-user HTTP traffic")
+	flag.StringVar(&cfg.HTTPSAddr, "https", "", "listen address for end-user HTTPS traffic, e.g. :443 (needs tls-cert/tls-key)")
+	flag.BoolVar(&cfg.RedirectHTTPS, "redirect-https", false, "make the http listener redirect to https")
 	flag.StringVar(&cfg.BaseDomain, "domain", "", "wildcard base domain, e.g. tun.example.com (required)")
 	flag.StringVar(&cfg.PublicScheme, "scheme", cfg.PublicScheme, "scheme used in published URLs: http or https")
 	flag.StringVar(&cfg.PublicHost, "public-host", "", "hostname published for tcp tunnels (default: base domain)")
