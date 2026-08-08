@@ -33,6 +33,11 @@ connected to tun.example.com:7000
   compiled into the server binary
 - One Go dependency (`hashicorp/yamux`); the server is a single static binary
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/panel-tunnels-dark.png">
+  <img alt="The admin panel showing four live tunnels with their public addresses, local targets, owning tokens, connection counts and traffic" src="docs/panel-tunnels-light.png">
+</picture>
+
 ## Install
 
 **Agent** (the machine you want to expose):
@@ -184,6 +189,11 @@ to every user on the machine. Only a PBKDF2 hash is kept in memory.
   HTTP-only switch; edit, disable, rotate, delete. After creating one the panel
   shows the exact `burrow login` command with a copy button.
 - **Agents** — connected agents, with a disconnect button.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/panel-tokens-dark.png">
+  <img alt="The tokens tab, listing three tokens with masked secrets, their reserved subdomains and ports, tunnel limits and per-token actions" src="docs/panel-tokens-light.png">
+</picture>
 
 Changes apply immediately: `disable`, `rotate` and `delete` drop that token's
 agents rather than waiting for a reconnect. Limits and reservations are re-read
