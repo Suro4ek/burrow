@@ -27,6 +27,11 @@ connected to tun.example.com:7000
   вкомпилирована в бинарник сервера
 - Одна Go-зависимость (`hashicorp/yamux`), сервер — один статический бинарник
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/panel-tunnels-dark.png">
+  <img alt="Панель со списком четырёх живых туннелей: публичные адреса, локальные цели, токены-владельцы, число соединений и трафик" src="docs/panel-tunnels-light.png">
+</picture>
+
 ## Установка
 
 **Агент** (машина, которую открываем):
@@ -174,6 +179,11 @@ burrow logout
   запретом TCP; редактирование, disable, rotate, delete. После создания панель
   показывает готовую команду `burrow login` с кнопкой копирования.
 - **Agents** — подключённые агенты и принудительное отключение.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/panel-tokens-dark.png">
+  <img alt="Вкладка Tokens: три токена со скрытыми секретами, зарезервированные сабдомены и порты, лимиты и действия" src="docs/panel-tokens-light.png">
+</picture>
 
 Изменения применяются сразу: `disable`, `rotate` и `delete` рвут соединения
 агентов этого токена, а не ждут переподключения. Лимиты и резервы перечитываются
