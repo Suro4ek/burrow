@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `burrow login` no longer carries `-no-tls` and `-insecure` over from a
+  previous login. A stale `-no-tls` survived every later login and could only
+  be cleared with `-no-tls=false`, which surfaced as an unexplained `EOF` once
+  the server gained a certificate.
+- A handshake that the server closes now explains the two ways it happens —
+  wrong port, or disagreeing with the server about TLS — instead of logging a
+  bare `EOF`.
+
 ### Added
 
 - `install.sh`: one-line install of a prebuilt binary with checksum

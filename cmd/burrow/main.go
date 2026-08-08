@@ -293,11 +293,16 @@ func cmdLogin(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Only the tedious-to-retype fields fall back to the saved login. The
+	// switches record exactly what was asked for: inheriting them meant a
+	// -no-tls from an old plaintext server survived every later login and
+	// could only be cleared with the non-obvious -no-tls=false, which showed
+	// up as a bare "EOF" once the server grew a certificate.
 	cfg := client.FileConfig{
 		Server:   firstNonEmpty(*server, saved.Server, os.Getenv("BURROW_SERVER")),
 		Token:    firstNonEmpty(*token, os.Getenv("BURROW_TOKEN"), saved.Token),
-		NoTLS:    *noTLS || (saved.NoTLS && !isSet(fs, "no-tls")),
-		Insecure: *insecure || (saved.Insecure && !isSet(fs, "insecure")),
+		NoTLS:    *noTLS,
+		Insecure: *insecure,
 		TLSName:  firstNonEmpty(*tlsName, saved.TLSName),
 	}
 	if cfg.Server == "" {
@@ -423,18 +428,6 @@ func parseInterspersed(fs *flag.FlagSet, argv []string) ([]string, error) {
 			return nil, err
 		}
 	}
-}
-
-// isSet reports whether a flag was given explicitly, so that saved settings
-// are only overridden on purpose.
-func isSet(fs *flag.FlagSet, name string) bool {
-	found := false
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == name {
-			found = true
-		}
-	})
-	return found
 }
 
 func firstNonEmpty(values ...string) string {

@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -148,12 +149,12 @@ func (c *Client) session(ctx context.Context) error {
 
 	ctl, err := mux.OpenStream()
 	if err != nil {
-		return fmt.Errorf("open control stream: %w", err)
+		return c.explainHandshake(fmt.Errorf("open control stream: %w", err))
 	}
 	defer ctl.Close()
 
 	if err := c.handshake(ctl); err != nil {
-		return err
+		return c.explainHandshake(err)
 	}
 	granted, err := c.register(ctl)
 	if err != nil {
@@ -192,6 +193,26 @@ func (c *Client) session(ctx context.Context) error {
 	case err := <-accepted:
 		return err
 	}
+}
+
+// explainHandshake turns a bare connection error into something actionable.
+//
+// Every way of pointing the agent at the wrong thing collapses into the same
+// unhelpful "EOF": a plaintext agent against a TLS control port, or an agent
+// aimed at the public HTTPS port instead of the control port. The transport
+// cannot tell these apart, so say what they are.
+func (c *Client) explainHandshake(err error) error {
+	if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return err
+	}
+	hint := "server closed the connection during the handshake"
+	if c.cfg.TLS {
+		hint += fmt.Sprintf("; check that %s is the control port (7000 by default) and not the HTTPS port",
+			c.cfg.ServerAddr)
+	} else {
+		hint += "; the server may require TLS — run `burrow login` again without -no-tls"
+	}
+	return fmt.Errorf("%s: %w", hint, err)
 }
 
 // dialServer opens the raw control connection.
