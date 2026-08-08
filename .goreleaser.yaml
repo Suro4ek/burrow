@@ -15,6 +15,9 @@ before:
 builds:
   - id: burrow
     main: ./cmd/burrow
+    # Without this the binary is named after project_name, which silently
+    # produced a burrowd archive containing an executable called "burrow".
+    binary: burrow
     env:
       - CGO_ENABLED=0
     flags:
@@ -26,6 +29,7 @@ builds:
 
   - id: burrowd
     main: ./cmd/burrowd
+    binary: burrowd
     env:
       - CGO_ENABLED=0
     flags:

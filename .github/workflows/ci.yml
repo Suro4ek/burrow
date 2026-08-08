@@ -120,3 +120,44 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: go build ./cmd/burrowd
+
+  artifacts:
+    name: Release artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # A dry-run release, because the packaging config can break in ways no
+      # amount of `go build` catches: a stray edit once shipped a burrowd
+      # archive whose executable was named "burrow", and it was only found
+      # when someone tried to install it on a server.
+      #
+      # before hooks are skipped: web/dist is committed, so no npm needed.
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean --skip=before,publish,docker,sign
+
+      - name: Each archive contains the binary it is named after
+        run: |
+          set -eu
+          fail=0
+          for f in dist/burrow_*.tar.gz dist/burrowd_*.tar.gz; do
+            name=$(basename "$f")
+            want=${name%%_*}
+            if tar -tzf "$f" | grep -qx "$want"; then
+              echo "ok   $name contains $want"
+            else
+              echo "FAIL $name does not contain $want:"
+              tar -tzf "$f" | sed 's/^/       /'
+              fail=1
+            fi
+          done
+          exit $fail
