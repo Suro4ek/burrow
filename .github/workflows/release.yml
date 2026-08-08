@@ -47,6 +47,12 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pushing the Homebrew cask means writing to another repository, and
+          # GITHUB_TOKEN is scoped to this one. Needs a PAT with write access
+          # to Suro4ek/homebrew-tap. If the secret is absent this resolves to
+          # an empty string and the cask step skips itself, so the binaries
+          # still get released.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   image:
     name: Container image

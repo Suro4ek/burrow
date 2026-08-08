@@ -40,7 +40,14 @@ connected to tun.example.com:7000
 
 ## Install
 
-**Agent** — on the machine you want to expose:
+**Homebrew** — macOS and Linux:
+
+```sh
+brew install suro4ek/tap/burrow      # agent
+brew install suro4ek/tap/burrowd     # server
+```
+
+Or, without Homebrew — **agent**, on the machine you want to expose:
 
 ```sh
 curl -sSLf https://raw.githubusercontent.com/Suro4ek/burrow/main/install.sh | sh

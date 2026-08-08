@@ -15,7 +15,6 @@ before:
 builds:
   - id: burrow
     main: ./cmd/burrow
-    binary: burrow
     env:
       - CGO_ENABLED=0
     flags:
@@ -27,7 +26,6 @@ builds:
 
   - id: burrowd
     main: ./cmd/burrowd
-    binary: burrowd
     env:
       - CGO_ENABLED=0
     flags:
@@ -62,6 +60,61 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+
+# Published to a personal tap (github.com/Suro4ek/homebrew-tap), not to
+# homebrew-core: core requires a level of notability a new project does not
+# have, and only accepts formulae that build from source.
+#
+# Casks rather than formulae because that is what Homebrew now wants for
+# prebuilt binaries. Casks are macOS-only, which is the right fit anyway — on
+# a Linux VPS you want install.sh or the container image.
+#
+# skip_upload is guarded so a release still succeeds when the tap token is
+# missing: the binaries matter more than the cask.
+homebrew_casks:
+  - name: burrow
+    ids: [burrow]
+    skip_upload: '{{ if eq (index .Env "HOMEBREW_TAP_TOKEN") "" }}true{{ else }}false{{ end }}'
+    repository:
+      owner: Suro4ek
+      name: homebrew-tap
+      branch: main
+      token: '{{ index .Env "HOMEBREW_TAP_TOKEN" }}'
+    directory: Casks
+    homepage: "https://github.com/Suro4ek/burrow"
+    description: "Tunnel agent: expose a local port through your own server"
+    commit_author:
+      name: goreleaser
+      email: noreply@github.com
+    hooks:
+      post:
+        # Homebrew quarantines anything it downloads, and macOS then refuses to
+        # run it. Clearing the attribute is the documented cask workaround.
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/burrow"]
+          end
+
+  - name: burrowd
+    ids: [burrowd]
+    skip_upload: '{{ if eq (index .Env "HOMEBREW_TAP_TOKEN") "" }}true{{ else }}false{{ end }}'
+    repository:
+      owner: Suro4ek
+      name: homebrew-tap
+      branch: main
+      token: '{{ index .Env "HOMEBREW_TAP_TOKEN" }}'
+    directory: Casks
+    homepage: "https://github.com/Suro4ek/burrow"
+    description: "Self-hosted tunnel server with a web admin panel"
+    commit_author:
+      name: goreleaser
+      email: noreply@github.com
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/burrowd"]
+          end
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"

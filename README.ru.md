@@ -34,7 +34,14 @@ connected to tun.example.com:7000
 
 ## Установка
 
-**Агент** — на машине, которую открываем:
+**Homebrew** — macOS и Linux:
+
+```sh
+brew install suro4ek/tap/burrow      # агент
+brew install suro4ek/tap/burrowd     # сервер
+```
+
+Или без Homebrew — **агент**, на машине, которую открываем:
 
 ```sh
 curl -sSLf https://raw.githubusercontent.com/Suro4ek/burrow/main/install.sh | sh
