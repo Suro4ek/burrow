@@ -48,6 +48,10 @@ make race     # the test run that matters — this code is nearly all concurrent
 what makes `go install` produce a working binary. CI fails if `web/dist` does
 not match the source.
 
+The same applies when merging a Dependabot bump of a frontend dependency: it
+can update `package.json` but not regenerate the bundle, so run `make web` and
+commit the result afterwards. CI only warns on those PRs instead of failing.
+
 ## What the tests cover
 
 `e2e_test.go` starts a real server and a real agent on ephemeral ports and

@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -71,10 +71,20 @@ jobs:
       # what makes `go install` produce a working panel. This check catches a
       # source change that was never rebuilt.
       #
-      # If it ever fails spuriously after a dependency bump, rerun `make web`
-      # and commit the result.
+      # Dependabot is exempt: it can bump package.json but cannot regenerate
+      # web/dist, so the check would fail on every dependency PR. Rebuild and
+      # commit the panel when merging one — the step below says so out loud.
       - name: Committed panel is up to date
+        if: github.actor != 'dependabot[bot]'
         run: git diff --exit-code -- web/dist
+
+      - name: Remind that a dependency bump needs a panel rebuild
+        if: github.actor == 'dependabot[bot]'
+        run: |
+          if ! git diff --quiet -- web/dist; then
+            echo "::warning::This bump changes the built panel."
+            echo "::warning::Run 'make web' and commit web/dist when merging."
+          fi
 
   cross:
     name: Cross-compile
@@ -90,7 +100,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
