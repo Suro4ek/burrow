@@ -1,0 +1,35 @@
+# Minimal self-hosted setup. Put a TLS terminator (see deploy/Caddyfile) in
+# front of port 8080 for the wildcard HTTPS certificate.
+services:
+  burrowd:
+    image: ghcr.io/suro4ek/burrow:latest
+    # or, to build from a checkout:
+    # build: .
+    restart: unless-stopped
+
+    # Host networking is the pragmatic choice: the TCP tunnel pool is a
+    # thousand-port range, and publishing that through the userland proxy is
+    # slow and memory-hungry. Swap to explicit ports if you must isolate.
+    network_mode: host
+
+    environment:
+      # Never pass the panel password as a command-line flag: arguments are
+      # visible in `ps` to every user on the host.
+      BURROWD_ADMIN_PASSWORD: ${BURROWD_ADMIN_PASSWORD:?set it in .env}
+
+    command:
+      - -domain=${BURROW_DOMAIN:?e.g. tun.example.com}
+      - -tokens=/data/tokens.json
+      - -control=0.0.0.0:7000
+      - -http=127.0.0.1:8080
+      - -scheme=https
+      - -tcp-range=20000-30000
+      - -tls-cert=/certs/fullchain.pem
+      - -tls-key=/certs/privkey.pem
+
+    volumes:
+      - burrow-data:/data
+      - ./certs:/certs:ro
+
+volumes:
+  burrow-data:

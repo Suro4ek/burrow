@@ -1,0 +1,106 @@
+# GoReleaser builds the release artefacts. Run `goreleaser check` after editing.
+version: 2
+
+project_name: burrow
+
+before:
+  hooks:
+    - go mod download
+    # The admin panel is embedded with go:embed, so it has to exist before any
+    # Go build. Rebuilding it here means a release can never ship a panel that
+    # is out of step with the source, even if web/dist was committed stale.
+    - npm --prefix web ci
+    - npm --prefix web run build
+
+builds:
+  - id: burrow
+    main: ./cmd/burrow
+    binary: burrow
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos: [linux, darwin, windows, freebsd]
+    goarch: [amd64, arm64]
+
+  - id: burrowd
+    main: ./cmd/burrowd
+    binary: burrowd
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    # No Windows build: the server wants a wildcard domain, a TCP port pool
+    # and a systemd unit. It is a Unix daemon.
+    goos: [linux, darwin, freebsd]
+    goarch: [amd64, arm64]
+
+archives:
+  # Two archives so that someone who only wants the agent does not download
+  # the server, which is the common case.
+  - id: burrow
+    ids: [burrow]
+    name_template: "burrow_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+  - id: burrowd
+    ids: [burrowd]
+    name_template: "burrowd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - deploy/*
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
+    - title: Other
+      order: 99
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Install
+
+    **Agent** — download `burrow_*` for your platform, or:
+
+    ```sh
+    go install github.com/suro4ek/burrow/cmd/burrow@{{ .Tag }}
+    ```
+
+    **Server** — download `burrowd_*`, or use the container image:
+
+    ```sh
+    docker pull ghcr.io/suro4ek/burrow:{{ .Version }}
+    ```
+
+    See the [README](https://github.com/suro4ek/burrow#readme) for the full setup.

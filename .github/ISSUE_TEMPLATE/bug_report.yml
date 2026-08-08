@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste tokens, admin passwords or full certificates.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The exact commands, including the flags you started burrowd with.
+      placeholder: |
+        1. burrowd -domain tun.example.com -tokens tokens.json ...
+        2. burrow http 3000
+        3. curl https://...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `burrow version` and `burrowd -version`.
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: server Ubuntu 24.04 amd64, agent macOS 15 arm64
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Server and agent output. `-log-level debug` shows each stream.
+      render: text

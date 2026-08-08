@@ -1,0 +1,31 @@
+# Caddy terminates TLS for the wildcard zone and forwards to burrowd.
+#
+# A wildcard certificate cannot be issued over the HTTP-01 challenge, so this
+# uses DNS-01. That needs a Caddy build with your provider's DNS plugin:
+#
+#   caddy add-package github.com/caddy-dns/cloudflare
+#
+# Replace "cloudflare" and the token below with your own provider.
+
+{
+	email you@example.com
+}
+
+*.tun.example.com, tun.example.com {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+
+	reverse_proxy 127.0.0.1:8080 {
+		# burrowd routes on Host, so it must survive the hop.
+		header_up Host {host}
+		header_up X-Forwarded-Proto {scheme}
+
+		# Websockets, SSE and long downloads are the point of a tunnel;
+		# do not let the proxy time them out.
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+}

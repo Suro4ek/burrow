@@ -1,0 +1,7 @@
+# The compiled panel is committed so that `go install` yields a working binary,
+# but it is build output: keep it out of language stats and collapse it in diffs.
+web/dist/** linguist-generated=true
+web/package-lock.json linguist-generated=true
+
+* text=auto eol=lf
+*.png binary

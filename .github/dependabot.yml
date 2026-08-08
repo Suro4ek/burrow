@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: monthly
+    labels: [dependencies]
+    groups:
+      # One PR for the whole toolchain: React, Vite and TypeScript bumps are
+      # far easier to verify together than one at a time.
+      frontend:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies]

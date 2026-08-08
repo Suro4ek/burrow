@@ -1,0 +1,11 @@
+.git/
+.github/
+bin/
+web/node_modules/
+web/tsconfig.tsbuildinfo
+tokens.json
+*.pem
+*.key
+*.crt
+Dockerfile
+.dockerignore

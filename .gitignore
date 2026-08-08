@@ -1,0 +1,12 @@
+bin/
+tokens.json
+*.pem
+*.key
+*.crt
+
+# frontend
+web/node_modules/
+web/tsconfig.tsbuildinfo
+
+# goreleaser output (note the leading slash: web/dist IS tracked)
+/dist/

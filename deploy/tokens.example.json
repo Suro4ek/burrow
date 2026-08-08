@@ -1,0 +1,15 @@
+[
+  {
+    "token": "REPLACE-ME-run-burrowd-gentoken",
+    "name": "suro-laptop",
+    "subdomains": ["dev", "api"],
+    "ports": [25343],
+    "max_tunnels": 8
+  },
+  {
+    "token": "REPLACE-ME-another-32-char-secret",
+    "name": "ci",
+    "max_tunnels": 2,
+    "deny_tcp": true
+  }
+]

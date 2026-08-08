@@ -1,0 +1,43 @@
+[Unit]
+Description=Self-hosted tunnel server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=burrowd
+Group=burrowd
+ExecStart=/usr/local/bin/burrowd \
+  -domain tun.example.com \
+  -tokens /etc/burrowd/tokens.json \
+  -control 0.0.0.0:7000 \
+  -http 127.0.0.1:8080 \
+  -scheme https \
+  -tcp-range 20000-30000 \
+  -tls-cert /etc/burrowd/tls/fullchain.pem \
+  -tls-key /etc/burrowd/tls/privkey.pem \
+  -admin-password-file /etc/burrowd/admin-password
+
+Restart=always
+RestartSec=2
+
+# The TCP tunnel pool and the control port are all above 1024, and HTTP is
+# proxied from Caddy on loopback, so the daemon never needs root.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+# The token store is rewritten whenever the panel creates or edits a token,
+# so this directory must stay writable.
+ReadWritePaths=/etc/burrowd
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
