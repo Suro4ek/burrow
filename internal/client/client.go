@@ -202,17 +202,27 @@ func (c *Client) session(ctx context.Context) error {
 // aimed at the public HTTPS port instead of the control port. The transport
 // cannot tell these apart, so say what they are.
 func (c *Client) explainHandshake(err error) error {
-	if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+	var what string
+	var netErr net.Error
+
+	switch {
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		what = "server closed the connection during the handshake"
+	case errors.As(err, &netErr) && netErr.Timeout():
+		// Aiming the agent at an HTTPS port produces this: the TLS handshake
+		// succeeds because it really is a TLS server, and then nothing ever
+		// answers the tunnel protocol.
+		what = "server accepted the connection but never answered the handshake"
+	default:
 		return err
 	}
-	hint := "server closed the connection during the handshake"
-	if c.cfg.TLS {
-		hint += fmt.Sprintf("; check that %s is the control port (7000 by default) and not the HTTPS port",
-			c.cfg.ServerAddr)
-	} else {
-		hint += "; the server may require TLS — run `burrow login` again without -no-tls"
+
+	hint := "; check that " + c.cfg.ServerAddr +
+		" is the control port (7000 by default) and not the HTTPS port"
+	if !c.cfg.TLS {
+		hint = "; the server may require TLS — run `burrow login` again without -no-tls"
 	}
-	return fmt.Errorf("%s: %w", hint, err)
+	return fmt.Errorf("%s%s: %w", what, hint, err)
 }
 
 // dialServer opens the raw control connection.

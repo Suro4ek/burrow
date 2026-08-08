@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/hashicorp/yamux"
 )
 
 // TestExplainHandshake covers the diagnostics for the two ways of pointing an
@@ -34,6 +36,12 @@ func TestExplainHandshake(t *testing.T) {
 			name: "truncated handshake is treated the same",
 			cfg:  Config{TLS: true, ServerAddr: "tun.example.com:443"},
 			in:   io.ErrUnexpectedEOF,
+			want: "control port",
+		},
+		{
+			name: "handshake that times out, e.g. aimed at the HTTPS port",
+			cfg:  Config{TLS: true, ServerAddr: "tun.example.com:443"},
+			in:   yamux.ErrTimeout,
 			want: "control port",
 		},
 		{
