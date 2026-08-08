@@ -79,7 +79,7 @@ homebrew_casks:
       owner: Suro4ek
       name: homebrew-tap
       branch: main
-      token: '{{ index .Env "HOMEBREW_TAP_TOKEN" }}'
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
     homepage: "https://github.com/Suro4ek/burrow"
     description: "Tunnel agent: expose a local port through your own server"
@@ -102,7 +102,7 @@ homebrew_casks:
       owner: Suro4ek
       name: homebrew-tap
       branch: main
-      token: '{{ index .Env "HOMEBREW_TAP_TOKEN" }}'
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
     homepage: "https://github.com/Suro4ek/burrow"
     description: "Self-hosted tunnel server with a web admin panel"
