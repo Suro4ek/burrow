@@ -76,6 +76,17 @@ func New(hostKeyPath string, s *Server) (*Server, error) {
 		}
 		s.parsed = append(s.parsed, key)
 	}
+
+	// Built here rather than in Serve: Serve runs in its own goroutine while
+	// Close may be called from another, and assigning the field in one while
+	// reading it in the other both races and lets Close see nil and quietly
+	// leave the server running.
+	s.srv = &gssh.Server{
+		Handler:          s.handleSession,
+		PasswordHandler:  s.checkPassword,
+		PublicKeyHandler: s.checkPublicKey,
+	}
+	s.srv.AddHostKey(s.hostKey)
 	return s, nil
 }
 
@@ -99,20 +110,11 @@ func (s *Server) Listen() (net.Listener, error) {
 
 // Serve handles connections until ln closes.
 func (s *Server) Serve(ln net.Listener) error {
-	s.srv = &gssh.Server{
-		Handler:          s.handleSession,
-		PasswordHandler:  s.checkPassword,
-		PublicKeyHandler: s.checkPublicKey,
-	}
-	s.srv.AddHostKey(s.hostKey)
 	return s.srv.Serve(ln)
 }
 
 // Close stops the server and every live session.
 func (s *Server) Close() error {
-	if s.srv == nil {
-		return nil
-	}
 	return s.srv.Close()
 }
 
