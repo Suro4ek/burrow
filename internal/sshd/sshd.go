@@ -51,6 +51,7 @@ type Server struct {
 
 	mu       sync.Mutex
 	sessions int
+	parsedMu sync.RWMutex
 }
 
 // New prepares a server, loading or creating the persistent host key.
@@ -64,18 +65,7 @@ func New(hostKeyPath string, s *Server) (*Server, error) {
 	}
 	s.hostKey = signer
 
-	for _, line := range s.AuthorizedKeys {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		key, _, _, _, err := gssh.ParseAuthorizedKey([]byte(line))
-		if err != nil {
-			s.Log.Warn("ignoring unparseable authorized key", "err", err)
-			continue
-		}
-		s.parsed = append(s.parsed, key)
-	}
+	s.SetAuthorizedKeys(s.AuthorizedKeys)
 
 	// Built here rather than in Serve: Serve runs in its own goroutine while
 	// Close may be called from another, and assigning the field in one while
@@ -136,7 +126,40 @@ func (s *Server) checkPassword(ctx gssh.Context, password string) bool {
 	return ok
 }
 
+// SetAuthorizedKeys replaces the accepted keys.
+//
+// Callable while running, because the agent only learns them once the server
+// answers its handshake — and again on every reconnect, so revoking a key in
+// the panel takes effect without restarting anything.
+func (s *Server) SetAuthorizedKeys(lines []string) {
+	var parsed []gssh.PublicKey
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key, _, _, _, err := gssh.ParseAuthorizedKey([]byte(line))
+		if err != nil {
+			s.Log.Warn("ignoring unparseable authorized key", "err", err)
+			continue
+		}
+		parsed = append(parsed, key)
+	}
+	s.parsedMu.Lock()
+	s.parsed = parsed
+	s.parsedMu.Unlock()
+}
+
+// AuthorizedKeyCount reports how many keys are currently accepted.
+func (s *Server) AuthorizedKeyCount() int {
+	s.parsedMu.RLock()
+	defer s.parsedMu.RUnlock()
+	return len(s.parsed)
+}
+
 func (s *Server) checkPublicKey(ctx gssh.Context, key gssh.PublicKey) bool {
+	s.parsedMu.RLock()
+	defer s.parsedMu.RUnlock()
 	for _, allowed := range s.parsed {
 		if gssh.KeysEqual(key, allowed) {
 			return true

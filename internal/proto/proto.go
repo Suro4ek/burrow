@@ -73,6 +73,10 @@ type HelloResp struct {
 	Error      string `json:"error,omitempty"`
 	Server     string `json:"server,omitempty"`
 	BaseDomain string `json:"base_domain,omitempty"`
+	// SSHAuthorizedKeys may open a session on the agent's own SSH server, so
+	// that `burrow ssh` accepts a key managed centrally instead of only the
+	// password it prints. Empty leaves password auth as the only way in.
+	SSHAuthorizedKeys []string `json:"ssh_authorized_keys,omitempty"`
 }
 
 // TunnelReq asks the server to expose one local address.

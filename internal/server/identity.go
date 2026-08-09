@@ -22,6 +22,8 @@ type Identity struct {
 	MaxTunnels int
 	// DenyTCP restricts the identity to HTTP tunnels.
 	DenyTCP bool
+	// SSHKeys are authorized_keys lines the agent should accept.
+	SSHKeys []string
 }
 
 // AuthRequest is what an agent presented when it connected.
@@ -95,6 +97,7 @@ func identityOf(t Token) Identity {
 		Ports:      slices.Clone(t.Ports),
 		MaxTunnels: t.MaxTunnels,
 		DenyTCP:    t.DenyTCP,
+		SSHKeys:    slices.Clone(t.SSHKeys),
 	}
 }
 

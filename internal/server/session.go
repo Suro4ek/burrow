@@ -157,9 +157,10 @@ func (s *Session) handshake(ctl net.Conn) error {
 	s.Hostname = hello.Hostname
 
 	return proto.Write(ctl, proto.TypeHelloResp, proto.HelloResp{
-		OK:         true,
-		Server:     s.srv.version,
-		BaseDomain: s.srv.cfg.BaseDomain,
+		OK:                true,
+		Server:            s.srv.version,
+		BaseDomain:        s.srv.cfg.BaseDomain,
+		SSHAuthorizedKeys: id.SSHKeys,
 	})
 }
 

@@ -283,6 +283,7 @@ Flags:
 	cfg.OnReady = func(granted []proto.TunnelResp) {
 		printSSHReady(granted, srv, password, workDir)
 	}
+	cfg.OnAuthorizedKeys = srv.SetAuthorizedKeys
 	return serve(cfg)
 }
 
@@ -302,7 +303,11 @@ func printSSHReady(granted []proto.TunnelResp, srv *sshd.Server, password, dir s
 	var b strings.Builder
 	fmt.Fprintf(&b, "\nSSH server ready — sharing %s as %s\n\n", dir, who)
 	fmt.Fprintf(&b, "  1. Connect\n     ssh -p %d %s@%s\n\n", g.RemotePort, who, g.RemoteHost)
-	fmt.Fprintf(&b, "  2. Password (new every run)\n     %s\n\n", password)
+	fmt.Fprintf(&b, "  2. Password (new every run)\n     %s\n", password)
+	if n := srv.AuthorizedKeyCount(); n > 0 {
+		fmt.Fprintf(&b, "     or one of the %d SSH keys on your account, with no password\n", n)
+	}
+	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "  3. Trust this host, to skip the yes/no prompt\n     echo '%s' >> ~/.ssh/known_hosts\n\n",
 		srv.HostKeyLine(g.RemoteHost, g.RemotePort))
 	fmt.Fprintf(&b, "     fingerprint: %s\n\n", srv.Fingerprint())

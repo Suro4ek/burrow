@@ -29,6 +29,7 @@ type Token struct {
 	Ports      []int      `json:"ports,omitempty"`
 	MaxTunnels int        `json:"max_tunnels,omitempty"`
 	DenyTCP    bool       `json:"deny_tcp,omitempty"`
+	SSHKeys    []string   `json:"ssh_keys,omitempty"`
 	Disabled   bool       `json:"disabled,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastSeen   *time.Time `json:"last_seen,omitempty"`
@@ -40,6 +41,7 @@ func (t *Token) clone() Token {
 	c := *t
 	c.Subdomains = slices.Clone(t.Subdomains)
 	c.Ports = slices.Clone(t.Ports)
+	c.SSHKeys = slices.Clone(t.SSHKeys)
 	if t.LastSeen != nil {
 		seen := *t.LastSeen
 		c.LastSeen = &seen
@@ -56,6 +58,7 @@ type TokenInput struct {
 	MaxTunnels *int      `json:"max_tunnels,omitempty"`
 	DenyTCP    *bool     `json:"deny_tcp,omitempty"`
 	Disabled   *bool     `json:"disabled,omitempty"`
+	SSHKeys    *[]string `json:"ssh_keys,omitempty"`
 }
 
 // Store holds the token list and persists it as JSON.
@@ -415,6 +418,9 @@ func applyInput(t *Token, in TokenInput) {
 	}
 	if in.Disabled != nil {
 		t.Disabled = *in.Disabled
+	}
+	if in.SSHKeys != nil {
+		t.SSHKeys = slices.Clone(*in.SSHKeys)
 	}
 }
 

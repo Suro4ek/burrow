@@ -42,6 +42,10 @@ type Config struct {
 	// OnReady is called after every successful (re)connect with the tunnels
 	// the server actually granted.
 	OnReady func(granted []proto.TunnelResp)
+	// OnAuthorizedKeys is called on every handshake with the SSH keys the
+	// server says may open a session. Called on reconnects too, so revoking a
+	// key takes effect without restarting the agent.
+	OnAuthorizedKeys func(keys []string)
 }
 
 // ErrRejected is returned when the server refuses the agent outright. Retrying
@@ -273,7 +277,11 @@ func (c *Client) handshake(ctl net.Conn) error {
 	if !resp.OK {
 		return fmt.Errorf("%w: %s", ErrRejected, resp.Error)
 	}
-	c.log.Debug("handshake ok", "server", resp.Server, "base_domain", resp.BaseDomain)
+	if c.cfg.OnAuthorizedKeys != nil {
+		c.cfg.OnAuthorizedKeys(resp.SSHAuthorizedKeys)
+	}
+	c.log.Debug("handshake ok", "server", resp.Server,
+		"base_domain", resp.BaseDomain, "ssh_keys", len(resp.SSHAuthorizedKeys))
 	return nil
 }
 

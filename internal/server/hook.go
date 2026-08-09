@@ -41,6 +41,7 @@ type HookAuthResponse struct {
 	Ports      []int    `json:"ports,omitempty"`
 	MaxTunnels int      `json:"max_tunnels,omitempty"`
 	DenyTCP    bool     `json:"deny_tcp,omitempty"`
+	SSHKeys    []string `json:"ssh_keys,omitempty"`
 }
 
 // HookUsageTunnel is one tunnel's lifetime totals.
@@ -186,6 +187,7 @@ func (h *hookClient) Authenticate(ctx context.Context, req AuthRequest) (Identit
 		Ports:      slices.Clone(resp.Ports),
 		MaxTunnels: resp.MaxTunnels,
 		DenyTCP:    resp.DenyTCP,
+		SSHKeys:    slices.Clone(resp.SSHKeys),
 	}
 	h.remember(id)
 	return id, nil
