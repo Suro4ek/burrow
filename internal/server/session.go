@@ -135,16 +135,26 @@ func (s *Session) handshake(ctl net.Conn) error {
 		return reject(fmt.Sprintf("protocol version mismatch: agent speaks %d, server speaks %d",
 			hello.Version, proto.Version))
 	}
-	tok, ok := s.srv.store.Lookup(hello.Token)
-	if !ok {
-		return reject("invalid token")
+	ctx, cancel := context.WithTimeout(context.Background(), handshakeTimeout)
+	defer cancel()
+
+	id, err := s.srv.auth.Authenticate(ctx, AuthRequest{
+		Token:        hello.Token,
+		AgentVersion: hello.Agent,
+		Hostname:     hello.Hostname,
+		RemoteAddr:   s.RemoteAddr,
+	})
+	if err != nil {
+		var d *ErrDenied
+		if errors.As(err, &d) {
+			return reject(d.Reason)
+		}
+		// Not a rejection: the backend is unwell. Say so rather than implying
+		// the agent's credentials are wrong.
+		return reject(err.Error())
 	}
-	if tok.Disabled {
-		return reject("this token is disabled")
-	}
-	s.TokenID, s.TokenName = tok.ID, tok.Name
+	s.TokenID, s.TokenName = id.ID, id.Name
 	s.Hostname = hello.Hostname
-	s.srv.store.TouchLastSeen(tok.ID)
 
 	return proto.Write(ctl, proto.TypeHelloResp, proto.HelloResp{
 		OK:         true,
@@ -186,22 +196,22 @@ func (s *Session) openTunnel(req proto.TunnelReq, log *slog.Logger) proto.Tunnel
 	}
 	cfg := s.srv.cfg
 
-	// Re-read the token instead of trusting the handshake snapshot: an admin
-	// may have changed limits or reservations while this agent was connected.
-	tok, ok := s.srv.store.Get(s.TokenID)
-	if !ok {
-		return fail("token no longer exists")
-	}
-	if tok.Disabled {
-		return fail("this token is disabled")
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+	defer cancel()
+
+	// Re-read the identity instead of trusting the handshake snapshot: limits
+	// or reservations may have changed while this agent was connected.
+	id, err := s.srv.auth.Refresh(ctx, s.TokenID)
+	if err != nil {
+		return fail("%s", err)
 	}
 
 	s.mu.Lock()
 	n := len(s.tunnels)
 	s.mu.Unlock()
 	limit := cfg.MaxTunnelsPerSession
-	if tok.MaxTunnels > 0 && tok.MaxTunnels < limit {
-		limit = tok.MaxTunnels
+	if id.MaxTunnels > 0 && id.MaxTunnels < limit {
+		limit = id.MaxTunnels
 	}
 	if n >= limit {
 		return fail("tunnel limit reached (%d)", limit)
@@ -225,7 +235,7 @@ func (s *Session) openTunnel(req proto.TunnelReq, log *slog.Logger) proto.Tunnel
 			if reservedSubdomains[sub] {
 				return fail("subdomain %q is reserved by the server", sub)
 			}
-			if err := s.srv.store.MayUseSubdomain(tok.ID, sub, cfg.FreeSubdomains); err != nil {
+			if err := s.srv.auth.AllowSubdomain(ctx, id, sub, cfg.FreeSubdomains); err != nil {
 				return fail("%s", err)
 			}
 		}
@@ -235,7 +245,7 @@ func (s *Session) openTunnel(req proto.TunnelReq, log *slog.Logger) proto.Tunnel
 		}
 
 	case proto.ProtoTCP:
-		if tok.DenyTCP {
+		if id.DenyTCP {
 			return fail("TCP tunnels are not allowed for this token")
 		}
 		port := req.RemotePort
@@ -243,8 +253,8 @@ func (s *Session) openTunnel(req proto.TunnelReq, log *slog.Logger) proto.Tunnel
 			// A token with reserved ports should get a stable address without
 			// having to ask for it, so `burrow ssh` keeps the same port across
 			// restarts. Fall through to random allocation if all are busy.
-			port = s.srv.reg.FirstFreePort(s.srv.store.ReservedPorts(tok.ID))
-		} else if err := s.srv.store.MayUsePort(tok.ID, port, cfg.FreePorts); err != nil {
+			port = s.srv.reg.FirstFreePort(id.Ports)
+		} else if err := s.srv.auth.AllowPort(ctx, id, port, cfg.FreePorts); err != nil {
 			return fail("%s", err)
 		}
 		ln, err := s.srv.reg.ClaimTCP(t, port)
@@ -293,6 +303,9 @@ func (s *Session) closeAll() {
 	s.mu.Unlock()
 
 	for _, t := range tunnels {
+		// Record before releasing: a tunnel that lived and died between two
+		// reports would otherwise never be accounted for at all.
+		s.srv.usage.recordClosed(t)
 		s.srv.reg.Release(t)
 	}
 }

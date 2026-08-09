@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config is the server's runtime configuration. Zero values are not usable;
@@ -63,6 +64,24 @@ type Config struct {
 
 	// MaxTunnelsPerSession caps tunnels on one agent connection.
 	MaxTunnelsPerSession int
+
+	// AuthHookURL delegates agent authentication to an external control
+	// plane instead of the local token file. This is the seam a hosted
+	// service builds on: accounts, plans and billing stay outside the tunnel
+	// path entirely.
+	AuthHookURL string
+	// UsageHookURL receives periodic traffic reports, and may answer with
+	// identities to disconnect — the enforcement path for quotas.
+	UsageHookURL string
+	// HookToken authenticates burrowd to the control plane.
+	HookToken string
+	// HookTimeout bounds a single control-plane request.
+	HookTimeout time.Duration
+	// HookCacheTTL is how long an authenticated identity stays usable
+	// without the agent reconnecting.
+	HookCacheTTL time.Duration
+	// UsageInterval is how often usage is reported.
+	UsageInterval time.Duration
 }
 
 // DefaultConfig returns a configuration that only needs BaseDomain and
@@ -78,6 +97,9 @@ func DefaultConfig() Config {
 		FreeSubdomains:       true,
 		FreePorts:            false,
 		MaxTunnelsPerSession: 16,
+		HookTimeout:          10 * time.Second,
+		HookCacheTTL:         12 * time.Hour,
+		UsageInterval:        60 * time.Second,
 	}
 }
 
@@ -128,6 +150,21 @@ func (c *Config) Validate() error {
 	}
 	if c.MaxTunnelsPerSession <= 0 {
 		c.MaxTunnelsPerSession = 16
+	}
+	if c.HookTimeout <= 0 {
+		c.HookTimeout = 10 * time.Second
+	}
+	if c.HookCacheTTL <= 0 {
+		c.HookCacheTTL = 12 * time.Hour
+	}
+	if c.UsageInterval <= 0 {
+		c.UsageInterval = 60 * time.Second
+	}
+	if c.UsageHookURL != "" && c.AuthHookURL == "" {
+		// Usage is attributed to identity ids, which only the auth hook can
+		// mint; reporting against local token ids would be meaningless to a
+		// control plane that never saw them.
+		return fmt.Errorf("usage-hook-url requires auth-hook-url")
 	}
 	return nil
 }

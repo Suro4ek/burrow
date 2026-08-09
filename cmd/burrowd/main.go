@@ -38,6 +38,7 @@ func run() error {
 	var (
 		portRange = flag.String("tcp-range", "20000-30000", "public TCP port pool for tcp tunnels")
 		adminPass = flag.String("admin-password-file", "", "file holding the admin panel password (env BURROWD_ADMIN_PASSWORD also works)")
+		hookToken = flag.String("hook-token-file", "", "file holding the bearer token sent to the control plane (env BURROWD_HOOK_TOKEN also works)")
 		logLevel  = flag.String("log-level", "info", "debug, info, warn or error")
 		logJSON   = flag.Bool("log-json", false, "emit structured JSON logs")
 		showVer   = flag.Bool("version", false, "print version and exit")
@@ -58,6 +59,11 @@ func run() error {
 	flag.BoolVar(&cfg.FreeSubdomains, "free-subdomains", cfg.FreeSubdomains, "let any agent claim any unreserved subdomain")
 	flag.BoolVar(&cfg.FreePorts, "free-ports", cfg.FreePorts, "let any agent request any unreserved fixed TCP port")
 	flag.IntVar(&cfg.MaxTunnelsPerSession, "max-tunnels", cfg.MaxTunnelsPerSession, "tunnel limit per agent connection")
+	flag.StringVar(&cfg.AuthHookURL, "auth-hook-url", "", "authenticate agents against this URL instead of the tokens file")
+	flag.StringVar(&cfg.UsageHookURL, "usage-hook-url", "", "POST traffic reports to this URL (requires auth-hook-url)")
+	flag.DurationVar(&cfg.UsageInterval, "usage-interval", cfg.UsageInterval, "how often to report usage")
+	flag.DurationVar(&cfg.HookTimeout, "hook-timeout", cfg.HookTimeout, "timeout for a control-plane request")
+	flag.DurationVar(&cfg.HookCacheTTL, "hook-cache-ttl", cfg.HookCacheTTL, "how long an authenticated identity stays usable without reconnecting")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `burrowd %s - self-hosted tunnel server
@@ -85,8 +91,11 @@ Flags:
 
 	// The password never arrives as a flag value: anything on the command
 	// line is visible in `ps` to every user on the box.
-	if cfg.AdminPassword, err = readAdminPassword(*adminPass); err != nil {
-		return err
+	if cfg.AdminPassword, err = readSecret(*adminPass, "BURROWD_ADMIN_PASSWORD"); err != nil {
+		return fmt.Errorf("admin password: %w", err)
+	}
+	if cfg.HookToken, err = readSecret(*hookToken, "BURROWD_HOOK_TOKEN"); err != nil {
+		return fmt.Errorf("hook token: %w", err)
 	}
 
 	log, err := newLogger(*logLevel, *logJSON)
@@ -107,17 +116,18 @@ Flags:
 	return srv.Run(ctx)
 }
 
-// readAdminPassword resolves the panel password from a file or the
-// environment. An empty result simply leaves the panel disabled.
-func readAdminPassword(path string) (string, error) {
+// readSecret resolves a secret from a file or the environment. Neither ever
+// comes from a flag value: command-line arguments are visible in `ps` to every
+// user on the machine.
+func readSecret(path, env string) (string, error) {
 	if path != "" {
 		b, err := os.ReadFile(path)
 		if err != nil {
-			return "", fmt.Errorf("read admin password file: %w", err)
+			return "", err
 		}
 		return strings.TrimSpace(string(b)), nil
 	}
-	return strings.TrimSpace(os.Getenv("BURROWD_ADMIN_PASSWORD")), nil
+	return strings.TrimSpace(os.Getenv(env)), nil
 }
 
 // newLogger builds the process logger.

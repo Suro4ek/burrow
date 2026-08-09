@@ -18,6 +18,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `-auth-hook-url` and `-usage-hook-url`: delegate agent authentication to an
+  external service and report per-tunnel traffic to it, with a `disconnect`
+  reply for enforcing quotas. Keeps accounts, plans and billing out of the
+  tunnel path entirely.
+
 - `install.sh`: one-line install of a prebuilt binary with checksum
   verification, no Go or Docker required.
 - Homebrew casks published to `suro4ek/tap` on every release.

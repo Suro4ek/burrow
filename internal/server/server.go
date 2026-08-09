@@ -17,6 +17,8 @@ import (
 type Server struct {
 	cfg     *Config
 	store   *Store
+	auth    Authenticator
+	usage   *usageReporter
 	admin   *adminAuth
 	adminH  http.Handler
 	reg     *Registry
@@ -66,6 +68,17 @@ func New(cfg Config, log *slog.Logger, version string) (*Server, error) {
 		started:  time.Now(),
 		ready:    make(chan struct{}),
 		sessions: make(map[string]*Session),
+	}
+
+	// The token file stays the default. An auth hook replaces it, which is how
+	// a hosted control plane owns accounts without any of that reaching here.
+	srv.auth = storeAuth{store: store}
+	if cfg.AuthHookURL != "" {
+		hook := newHookClient(&cfg, log, version)
+		srv.auth = hook
+		if cfg.UsageHookURL != "" {
+			srv.usage = &usageReporter{srv: srv, hook: hook}
+		}
 	}
 
 	if cfg.AdminPassword != "" {
@@ -134,6 +147,7 @@ func (srv *Server) Run(ctx context.Context) error {
 		"tcp_range", fmt.Sprintf("%d-%d", srv.cfg.TCPPortMin, srv.cfg.TCPPortMax),
 		"admin", srv.AdminEnabled(),
 		"tokens", srv.store.Count(),
+		"auth_hook", srv.cfg.AuthHookURL != "",
 	)
 	if srv.AdminEnabled() {
 		srv.log.Info("admin panel",
@@ -167,6 +181,14 @@ func (srv *Server) Run(ctx context.Context) error {
 		go func() {
 			errc <- fmt.Errorf("https listener: %w", httpsSrv.Serve(httpsLn))
 		}()
+	}
+
+	if srv.usage != nil {
+		srv.log.Info("usage reporting enabled",
+			"url", srv.cfg.UsageHookURL, "interval", srv.cfg.UsageInterval)
+		usageCtx, stopUsage := context.WithCancel(context.Background())
+		defer stopUsage()
+		go srv.usage.run(usageCtx, srv.cfg.UsageInterval)
 	}
 
 	// The optional second admin listener answers on any Host, so it works

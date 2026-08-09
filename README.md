@@ -331,11 +331,74 @@ deploy/           systemd unit, Caddyfile, example tokens.json
 | `-tokens` | `tokens.json` | token store path |
 | `-admin-password-file` | — | enables the panel (or `BURROWD_ADMIN_PASSWORD`) |
 | `-admin-addr` | — | extra panel listener, e.g. `127.0.0.1:7002` |
+| `-auth-hook-url` | — | authenticate agents against your own service |
+| `-usage-hook-url` | — | POST traffic reports there (requires `-auth-hook-url`) |
+| `-usage-interval` | `60s` | how often usage is reported |
 | `-status-token` | — | enables `GET /_status` on the base domain |
 | `-free-subdomains` | `true` | let any agent claim any unreserved subdomain |
 | `-free-ports` | `false` | let any agent request any unreserved fixed port |
 | `-max-tunnels` | `16` | tunnel limit per agent connection |
 | `-log-level` | `info` | `debug` logs every stream |
+
+## Delegating auth to your own service
+
+By default `burrowd` is self-contained: tokens live in `tokens.json` and the
+panel manages them. Point it at an HTTP endpoint instead and something else
+decides who may connect and what they may do:
+
+```sh
+burrowd -domain tun.example.com \
+  -auth-hook-url  https://api.example.com/v1/authenticate \
+  -usage-hook-url https://api.example.com/v1/usage \
+  -hook-token-file /etc/burrowd/hook-token
+```
+
+This is the seam a hosted service is built on. Accounts, plans, quotas and
+billing stay entirely outside the tunnel path — burrowd never learns what a
+subscription is, and the same open-source binary runs in both cases.
+
+**Authentication.** Every agent connection produces one POST:
+
+```jsonc
+// -> POST /v1/authenticate            Authorization: Bearer <hook token>
+{ "token": "…", "hostname": "laptop", "remote_addr": "203.0.113.9:51000",
+  "agent_version": "0.1.8", "server_version": "0.1.8", "base_domain": "tun.example.com" }
+
+// <- 200
+{ "ok": true, "id": "acct_42", "name": "acme/laptop",
+  "subdomains": ["shop"], "ports": [25343], "max_tunnels": 8, "deny_tcp": false }
+
+// <- 200, refusing. The reason is shown to the agent verbatim.
+{ "ok": false, "error": "subscription expired" }
+```
+
+A non-2xx status is treated as your service being down, not as a bad token:
+the agent is told authentication is unavailable and keeps retrying. Answer
+`ok:false` when you actually mean no.
+
+**Usage.** Every `-usage-interval` (60s by default) burrowd reports lifetime
+totals per tunnel — totals rather than deltas, so a lost report costs nothing
+and your side can simply keep the maximum it has seen per `tunnel_id`:
+
+```jsonc
+// -> POST /v1/usage
+{ "reported_at": "…", "tunnels": [
+  { "tunnel_id": "…", "token_id": "acct_42", "proto": "http",
+    "public": "https://shop.tun.example.com", "opened_at": "…",
+    "conns": 128, "bytes_in": 91234, "bytes_out": 8123456, "closed": false }
+]}
+
+// <- 200, cutting off an account that ran out of quota
+{ "disconnect": ["acct_42"] }
+```
+
+Tunnels that closed since the last report appear once with `"closed": true`,
+so short-lived ones are still accounted for. The `disconnect` list is the
+enforcement path: it drops those agents immediately, which is how a cancelled
+plan stops consuming bandwidth without burrowd knowing anything about plans.
+
+With an auth hook, granted limits are cached for `-hook-cache-ttl` (12h) and
+refreshed when the agent reconnects; use `disconnect` to act sooner.
 
 ## How this compares
 
