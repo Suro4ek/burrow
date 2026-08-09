@@ -82,3 +82,16 @@ func DeleteFileConfig() (string, error) {
 	}
 	return path, nil
 }
+
+// SSHHostKeyPath is where `burrow ssh` keeps its host key.
+//
+// Beside the saved login, and persistent for the same reason a real sshd's is:
+// a key that changed every run would make ssh refuse to connect after the
+// first session, with a warning about a possible attack.
+func SSHHostKeyPath() (string, error) {
+	path, err := ConfigPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(path), "ssh_host_ed25519_key"), nil
+}

@@ -219,6 +219,31 @@ Compact form for `-tunnel`:
 | `tcp:22` | local `127.0.0.1:22`, port assigned by the rules below |
 | `tcp:22:25343` | public port `25343` |
 
+`burrow ssh` is not a tunnel to your system sshd — it starts an SSH server of
+its own, serving the directory you ran it in as the user who ran it. A machine
+with no sshd, no open port and no root becomes reachable:
+
+```console
+$ burrow ssh
+
+SSH server ready — sharing /home/me/project as me
+
+  1. Connect
+     ssh -p 25343 me@tun.example.com
+
+  2. Password (new every run)
+     kmaiu-335fr-x8pmf-vyf8u
+
+  3. Trust this host, to skip the yes/no prompt
+     echo '[tun.example.com]:25343 ssh-ed25519 AAAA…' >> ~/.ssh/known_hosts
+```
+
+The server binds loopback only, so the tunnel is the sole way in and nothing
+is left listening once you stop it. The host key is kept in
+`~/.config/burrow`, so that known_hosts line stays valid across runs — a key
+regenerated each time would make ssh refuse to reconnect, loudly. The password
+is new every run, so ctrl-c really does end access.
+
 ## The admin panel
 
 Enabled by setting a password, served on the **bare base domain** at

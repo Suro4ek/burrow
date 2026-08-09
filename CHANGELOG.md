@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`burrow ssh` now runs its own SSH server** instead of forwarding to the
+  system sshd. It serves the directory it was started in, as the user who
+  started it, and prints the connect command, a per-run password and the
+  known_hosts line that skips the first-connection prompt.
+
 ### Fixed
 
 - `burrow login` no longer carries `-no-tls` and `-insecure` over from a

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -11,13 +12,12 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
-	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/suro4ek/burrow/internal/client"
 	"github.com/suro4ek/burrow/internal/proto"
+	"github.com/suro4ek/burrow/internal/sshd"
 )
 
 // version is overridden at build time: -ldflags "-X main.version=1.2.3".
@@ -205,15 +205,25 @@ func cmdTCP(args []string) error {
 	return serve(cfg)
 }
 
-// cmdSSH is cmdTCP pointed at the local SSH daemon, which is the case people
-// actually reach for.
+// cmdSSH runs an SSH server here and publishes it.
+//
+// Not a tunnel to the system sshd: this starts burrow's own server, so a
+// machine with no sshd, no open port and no root still becomes reachable. The
+// shell opens in the directory this was run from, as the user who ran it.
 func cmdSSH(args []string) error {
 	fs := flag.NewFlagSet("burrow ssh", flag.ExitOnError)
 	conn := registerConn(fs)
-	local := fs.String("local", "22", "local SSH port or host:port")
+	dir := fs.String("dir", "", "directory sessions start in (default: the current one)")
 	port := fs.Int("port", 0, "requested public port (default: reserved port for your token, else a free one)")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: burrow ssh [flags]\n\nFlags:\n")
+		fmt.Fprint(os.Stderr, `Usage: burrow ssh [flags]
+
+Serves a shell in the current directory over SSH, reachable through your
+tunnel server. Nothing listens on this machine: the server is bound to
+loopback and only the tunnel reaches it.
+
+Flags:
+`)
 		fs.PrintDefaults()
 	}
 
@@ -223,23 +233,81 @@ func cmdSSH(args []string) error {
 	}
 	if len(rest) > 0 {
 		fs.Usage()
-		return fmt.Errorf("burrow ssh takes no positional arguments; use -local to change the local port")
+		return fmt.Errorf("burrow ssh takes no positional arguments; use -dir to change the directory")
 	}
-	addr, err := client.ParseLocalAddr(*local)
+
+	workDir := *dir
+	if workDir == "" {
+		if workDir, err = os.Getwd(); err != nil {
+			return fmt.Errorf("determine the current directory: %w", err)
+		}
+	}
+	if info, err := os.Stat(workDir); err != nil || !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", workDir)
+	}
+
+	hostKey, err := client.SSHHostKeyPath()
 	if err != nil {
 		return err
 	}
-	warnIfNoSSHD(addr)
+	password := sshd.NewPassword()
+	srv, err := sshd.New(hostKey, &sshd.Server{
+		Dir:      workDir,
+		Password: password,
+		Log:      slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+	})
+	if err != nil {
+		return err
+	}
+
+	ln, err := srv.Listen()
+	if err != nil {
+		return fmt.Errorf("start the ssh server: %w", err)
+	}
+	defer ln.Close()
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, net.ErrClosed) {
+			fmt.Fprintln(os.Stderr, "burrow: ssh server stopped:", err)
+		}
+	}()
 
 	cfg, err := conn.resolve([]client.TunnelSpec{{
 		Proto:      proto.ProtoTCP,
-		LocalAddr:  addr,
+		LocalAddr:  ln.Addr().String(),
 		RemotePort: *port,
 	}})
 	if err != nil {
 		return err
 	}
+	// Replace the generic table with instructions that are actually usable.
+	cfg.OnReady = func(granted []proto.TunnelResp) {
+		printSSHReady(granted, srv, password, workDir)
+	}
 	return serve(cfg)
+}
+
+// printSSHReady prints the three things someone needs to connect.
+func printSSHReady(granted []proto.TunnelResp, srv *sshd.Server, password, dir string) {
+	var g proto.TunnelResp
+	for _, t := range granted {
+		if t.Proto == proto.ProtoTCP {
+			g = t
+		}
+	}
+	if g.RemotePort == 0 {
+		return
+	}
+	who := sshd.CurrentUser()
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "\nSSH server ready — sharing %s as %s\n\n", dir, who)
+	fmt.Fprintf(&b, "  1. Connect\n     ssh -p %d %s@%s\n\n", g.RemotePort, who, g.RemoteHost)
+	fmt.Fprintf(&b, "  2. Password (new every run)\n     %s\n\n", password)
+	fmt.Fprintf(&b, "  3. Trust this host, to skip the yes/no prompt\n     echo '%s' >> ~/.ssh/known_hosts\n\n",
+		srv.HostKeyLine(g.RemoteHost, g.RemotePort))
+	fmt.Fprintf(&b, "     fingerprint: %s\n\n", srv.Fingerprint())
+	fmt.Fprint(&b, "ctrl-c to stop — nothing stays listening afterwards\n")
+	fmt.Print(b.String())
 }
 
 // cmdStart publishes several tunnels over one connection.
@@ -357,23 +425,6 @@ func cmdConfig(args []string) error {
 	fmt.Printf("%s\n  server: %s\n  token:  %s\n  tls:    %v\n",
 		path, cfg.Server, maskToken(cfg.Token), !cfg.NoTLS)
 	return nil
-}
-
-// warnIfNoSSHD tells the user up front when nothing is listening locally,
-// which is a far more common mistake than a tunnel problem.
-func warnIfNoSSHD(addr string) {
-	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
-	if err == nil {
-		conn.Close()
-		return
-	}
-	fmt.Fprintf(os.Stderr, "warning: nothing is listening on %s\n", addr)
-	if runtime.GOOS == "darwin" {
-		fmt.Fprintln(os.Stderr, "  enable it with: System Settings > General > Sharing > Remote Login")
-	} else {
-		fmt.Fprintln(os.Stderr, "  start it with: sudo systemctl start ssh")
-	}
-	fmt.Fprintln(os.Stderr, "  the tunnel will open anyway and start working once sshd is up")
 }
 
 // printGranted renders the live tunnel table after every (re)connect.
