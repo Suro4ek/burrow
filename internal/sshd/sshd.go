@@ -214,20 +214,47 @@ func (s *Server) handleSession(sess gssh.Session) {
 		_ = sess.Exit(1)
 		return
 	}
-	defer f.Close()
+	// The pty is closed at the end rather than deferred: both goroutines below
+	// touch it, and closing it underneath them is a use-after-close the race
+	// detector catches on Linux and macOS scheduling happened to hide.
+	var wg sync.WaitGroup
+	resizeDone := make(chan struct{})
 
+	wg.Add(1)
 	go func() {
-		for win := range winCh {
-			_ = pty.Setsize(f, &pty.Winsize{Rows: uint16(win.Height), Cols: uint16(win.Width)})
+		defer wg.Done()
+		for {
+			select {
+			case win, ok := <-winCh:
+				if !ok {
+					return
+				}
+				_ = pty.Setsize(f, &pty.Winsize{Rows: uint16(win.Height), Cols: uint16(win.Width)})
+			case <-resizeDone:
+				return
+			}
 		}
 	}()
-	go func() { _, _ = io.Copy(f, sess) }() // client -> shell
-	_, _ = io.Copy(sess, f)                 // shell -> client
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(f, sess) // client -> shell
+	}()
+
+	_, _ = io.Copy(sess, f) // shell -> client, ends when the shell exits
 
 	// The client hung up: make sure the shell does not outlive it.
 	_ = cmd.Process.Signal(syscall.SIGHUP)
 	err = cmd.Wait()
+
+	// Exit closes the session, which ends the client -> shell copy; the
+	// channel ends the resize loop. Only once both are done is the pty safe
+	// to close.
 	_ = sess.Exit(exitCode(err))
+	close(resizeDone)
+	wg.Wait()
+	_ = f.Close()
 }
 
 // writeBanner greets an interactive session.
