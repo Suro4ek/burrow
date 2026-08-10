@@ -199,3 +199,58 @@ func TestNewPassword(t *testing.T) {
 		seen[p] = true
 	}
 }
+
+// TestBannerOnlyOnInteractiveSessions is the constraint that matters: a
+// greeting written into a session without a terminal lands in the middle of
+// scp's or rsync's protocol and corrupts the transfer.
+func TestBannerOnlyOnInteractiveSessions(t *testing.T) {
+	addr, _ := start(t, &Server{Dir: t.TempDir(), Password: "pw"})
+	c, err := dial(t, addr, xssh.Password("pw"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// No pty: output must be exactly what the command produced.
+	if got := run(t, c, "echo marker"); got != "marker" {
+		t.Errorf("non-interactive output = %q, want just the command's own", got)
+	}
+
+	// With a pty, the greeting should be there.
+	sess, err := c.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	if err := sess.RequestPty("xterm", 40, 100, xssh.TerminalModes{}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := sess.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Shell(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The title and the greeting are separate writes, so read until both have
+	// arrived rather than assuming they share a packet.
+	var got string
+	deadline := time.Now().Add(5 * time.Second)
+	buf := make([]byte, 4096)
+	for time.Now().Before(deadline) && !strings.Contains(got, "connected through burrow") {
+		n, err := out.Read(buf)
+		if n > 0 {
+			got += string(buf[:n])
+		}
+		if err != nil {
+			break
+		}
+	}
+	if !strings.Contains(got, "connected through burrow") {
+		t.Errorf("interactive session had no greeting: %q", got)
+	}
+	if !strings.Contains(got, "\x1b]0;burrow:") {
+		t.Errorf("interactive session did not set the terminal title: %q", got)
+	}
+}

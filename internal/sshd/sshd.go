@@ -202,6 +202,10 @@ func (s *Server) handleSession(sess gssh.Session) {
 		return
 	}
 
+	// Only now that a terminal was asked for: writing this into a session
+	// without one would land in the middle of scp's or rsync's protocol.
+	s.writeBanner(sess, ptyReq.Term)
+
 	cmd.Env = append(cmd.Env, "TERM="+ptyReq.Term)
 	f, err := pty.Start(cmd)
 	if err != nil {
@@ -225,6 +229,43 @@ func (s *Server) handleSession(sess gssh.Session) {
 	err = cmd.Wait()
 	_ = sess.Exit(exitCode(err))
 }
+
+// writeBanner greets an interactive session.
+//
+// Landing straight in a shell gives no sign of where you ended up, which
+// matters more here than on an ordinary server: the prompt belongs to someone
+// else's machine and the directory is whatever they were standing in.
+func (s *Server) writeBanner(sess gssh.Session, term string) {
+	host, _ := os.Hostname()
+	if host == "" {
+		host = "this machine"
+	}
+	dir := s.Dir
+	if home, err := os.UserHomeDir(); err == nil && home != "/" && strings.HasPrefix(dir, home) {
+		dir = "~" + strings.TrimPrefix(dir, home)
+	}
+
+	// Naming the tab is half the point: a terminal full of ssh sessions is
+	// otherwise indistinguishable.
+	if term != "" && term != "dumb" {
+		fmt.Fprintf(sess, "\x1b]0;burrow: %s — %s\x07", filepath.Base(s.Dir), host)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "\r\n  %sconnected through burrow%s\r\n", bold, reset)
+	fmt.Fprintf(&b, "  %shost%s      %s\r\n", dim, reset, host)
+	fmt.Fprintf(&b, "  %sdirectory%s %s\r\n", dim, reset, dir)
+	fmt.Fprintf(&b, "  %suser%s      %s\r\n", dim, reset, CurrentUser())
+	fmt.Fprintf(&b, "\r\n  %sthe session ends when the agent stops%s\r\n\r\n", dim, reset)
+	io.WriteString(sess, b.String())
+}
+
+// Terminal attributes, kept plain enough to be harmless where unsupported.
+const (
+	bold  = "\x1b[1m"
+	dim   = "\x1b[2m"
+	reset = "\x1b[0m"
+)
 
 // runPlain handles a session with no pty.
 func (s *Server) runPlain(sess gssh.Session, cmd *exec.Cmd) {

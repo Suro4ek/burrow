@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `burrow ssh` greets an interactive session with where it landed — host,
+  directory and user — and names the terminal tab. Written only when a
+  terminal was requested, so scp and rsync are untouched.
+
+### Fixed
+
+- The container image built against a Go older than `go.mod` requires. CI now
+  compares the two, since a dependency bump can raise the minimum without
+  anyone touching the Dockerfile and the only symptom is a failed release.
+
 ### Changed
 
 - **`burrow ssh` now runs its own SSH server** instead of forwarding to the

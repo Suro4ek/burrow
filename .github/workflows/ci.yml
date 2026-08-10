@@ -37,6 +37,22 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+
+      # The Dockerfile pins a Go version and go.mod states a minimum; a
+      # dependency bump can raise the second without anyone touching the
+      # first, and the only symptom is the image build failing at release
+      # time, long after the change that caused it.
+      - name: Dockerfile Go version covers go.mod
+        run: |
+          need=$(awk '/^go /{print $2}' go.mod | cut -d. -f1,2)
+          have=$(sed -n 's/^FROM golang:\([0-9][0-9.]*\).*/\1/p' Dockerfile | head -1 | cut -d. -f1,2)
+          echo "go.mod needs $need, Dockerfile has $have"
+          lowest=$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)
+          if [ "$lowest" != "$need" ]; then
+            echo "::error::Dockerfile uses golang:$have but go.mod requires $need"
+            exit 1
+          fi
+
       - name: go mod tidy is clean
         run: |
           go mod tidy
