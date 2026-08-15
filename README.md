@@ -278,6 +278,21 @@ burrowd ... -admin-addr 127.0.0.1:7002
 ssh -L 7002:127.0.0.1:7002 root@vps    # then open http://127.0.0.1:7002/_admin/
 ```
 
+### A hostname of your own
+
+`-route` sends a fixed hostname to a local address instead of to a tunnel, so
+the thing you run beside the tunnels — a panel, a status page — can share the
+TLS listener rather than needing a reverse proxy in front of everything:
+
+```sh
+burrowd -domain tun.example.com -https :443 \
+  -route app.example.com=127.0.0.1:8081
+```
+
+The name has to be in your certificate and outside the tunnel zone; a route
+under the base domain is refused, because it would shadow a tunnel and whoever
+claimed that name would never learn why theirs is unreachable.
+
 ## Tokens
 
 `tokens.json` is rewritten by the server whenever the panel changes something,

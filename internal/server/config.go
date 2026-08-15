@@ -65,6 +65,11 @@ type Config struct {
 	// MaxTunnelsPerSession caps tunnels on one agent connection.
 	MaxTunnelsPerSession int
 
+	// Routes send fixed hostnames to a local upstream instead of to a tunnel,
+	// so a panel or a status page can share the TLS listener. Keys are
+	// hostnames, values are host:port.
+	Routes map[string]string
+
 	// AuthHookURL delegates agent authentication to an external control
 	// plane instead of the local token file. This is the seam a hosted
 	// service builds on: accounts, plans and billing stay outside the tunnel
@@ -147,6 +152,14 @@ func (c *Config) Validate() error {
 	}
 	if c.TokensFile == "" {
 		return fmt.Errorf("tokens file is required")
+	}
+	for host := range c.Routes {
+		// A routed name inside the tunnel zone would shadow a tunnel, and the
+		// person who claimed that name would never find out why theirs is
+		// unreachable.
+		if strings.HasSuffix(host, "."+c.BaseDomain) {
+			return fmt.Errorf("route %q is inside the tunnel zone and would shadow a tunnel", host)
+		}
 	}
 	if c.MaxTunnelsPerSession <= 0 {
 		c.MaxTunnelsPerSession = 16

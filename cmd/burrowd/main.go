@@ -59,6 +59,8 @@ func run() error {
 	flag.BoolVar(&cfg.FreeSubdomains, "free-subdomains", cfg.FreeSubdomains, "let any agent claim any unreserved subdomain")
 	flag.BoolVar(&cfg.FreePorts, "free-ports", cfg.FreePorts, "let any agent request any unreserved fixed TCP port")
 	flag.IntVar(&cfg.MaxTunnelsPerSession, "max-tunnels", cfg.MaxTunnelsPerSession, "tunnel limit per agent connection")
+	flag.Var(&routeFlags{cfg: &cfg}, "route",
+		"send a hostname to a local upstream, repeatable (e.g. app.example.com=127.0.0.1:8081)")
 	flag.StringVar(&cfg.AuthHookURL, "auth-hook-url", "", "authenticate agents against this URL instead of the tokens file")
 	flag.StringVar(&cfg.UsageHookURL, "usage-hook-url", "", "POST traffic reports to this URL (requires auth-hook-url)")
 	flag.DurationVar(&cfg.UsageInterval, "usage-interval", cfg.UsageInterval, "how often to report usage")
@@ -114,6 +116,23 @@ Flags:
 	defer stop()
 
 	return srv.Run(ctx)
+}
+
+// routeFlags collects repeated -route flags.
+type routeFlags struct{ cfg *server.Config }
+
+func (r *routeFlags) String() string { return fmt.Sprintf("%d route(s)", len(r.cfg.Routes)) }
+
+func (r *routeFlags) Set(v string) error {
+	host, upstream, err := server.ParseRoute(v)
+	if err != nil {
+		return err
+	}
+	if r.cfg.Routes == nil {
+		r.cfg.Routes = map[string]string{}
+	}
+	r.cfg.Routes[host] = upstream
+	return nil
 }
 
 // readSecret resolves a secret from a file or the environment. Neither ever

@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -530,5 +531,89 @@ func TestHTTPSTunnel(t *testing.T) {
 	}
 	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "https://secure."+baseDomain) {
 		t.Errorf("Location = %q", loc)
+	}
+}
+
+// TestRouteToLocalUpstream covers giving the control panel a hostname of its
+// own without a second daemon in front of the tunnel server.
+func TestRouteToLocalUpstream(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "panel host=%s xff=%s", r.Host, r.Header.Get("X-Forwarded-For"))
+	}))
+	t.Cleanup(upstream.Close)
+	upstreamAddr := strings.TrimPrefix(upstream.URL, "http://")
+
+	tokensPath := filepath.Join(t.TempDir(), "tokens.json")
+	if err := os.WriteFile(tokensPath,
+		[]byte(fmt.Sprintf(`[{"token":%q,"name":"test"}]`, testToken)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := server.DefaultConfig()
+	cfg.ControlAddr = "127.0.0.1:0"
+	cfg.HTTPAddr = "127.0.0.1:0"
+	cfg.BaseDomain = baseDomain
+	cfg.TokensFile = tokensPath
+	cfg.Routes = map[string]string{"app.example.com": upstreamAddr}
+
+	srv, err := server.New(cfg, testLogger(t), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	select {
+	case <-srv.Ready():
+	case <-time.After(5 * time.Second):
+		t.Fatal("server never became ready")
+	}
+
+	req, _ := http.NewRequest("GET", "http://"+srv.HTTPAddr().String()+"/", nil)
+	req.Host = "app.example.com"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
+	}
+	// The upstream decides cookie scope from Host, so it must see the name the
+	// user typed rather than the loopback address.
+	if !strings.Contains(string(body), "host=app.example.com") {
+		t.Errorf("upstream saw the wrong Host: %s", body)
+	}
+	if !strings.Contains(string(body), "xff=127.0.0.1") {
+		t.Errorf("upstream got no X-Forwarded-For: %s", body)
+	}
+
+	// A name that is not routed must still behave as before.
+	req, _ = http.NewRequest("GET", "http://"+srv.HTTPAddr().String()+"/", nil)
+	req.Host = "nothing.example.com"
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Errorf("unrouted host = %d, want 404", resp2.StatusCode)
+	}
+}
+
+// TestRouteInsideTunnelZoneIsRefused: a routed name under the base domain
+// would shadow a tunnel, and whoever claimed that name would never learn why
+// theirs is unreachable.
+func TestRouteInsideTunnelZoneIsRefused(t *testing.T) {
+	cfg := server.DefaultConfig()
+	cfg.BaseDomain = baseDomain
+	cfg.TokensFile = filepath.Join(t.TempDir(), "tokens.json")
+	cfg.Routes = map[string]string{"panel." + baseDomain: "127.0.0.1:9000"}
+
+	if _, err := server.New(cfg, testLogger(t), "test"); err == nil {
+		t.Fatal("a route inside the tunnel zone was accepted")
 	}
 }

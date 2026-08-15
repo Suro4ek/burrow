@@ -59,6 +59,13 @@ func (srv *Server) newProxy(t *Tunnel) *httputil.ReverseProxy {
 func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := hostOnly(r.Host)
 
+	// Fixed routes win over everything: they are configured by the operator,
+	// while tunnel names are claimed by whoever asks first.
+	if p := srv.routeFor(host); p != nil {
+		p.ServeHTTP(w, r)
+		return
+	}
+
 	if host == srv.cfg.BaseDomain {
 		// The panel lives on the bare base domain, so a tunnel can never
 		// shadow it: subdomains are a different host entirely.

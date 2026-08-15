@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"sync"
 	"time"
 )
@@ -22,6 +23,7 @@ type Server struct {
 	admin   *adminAuth
 	adminH  http.Handler
 	reg     *Registry
+	routes  map[string]*httputil.ReverseProxy
 	log     *slog.Logger
 	version string
 	started time.Time
@@ -80,6 +82,8 @@ func New(cfg Config, log *slog.Logger, version string) (*Server, error) {
 			srv.usage = &usageReporter{srv: srv, hook: hook}
 		}
 	}
+
+	srv.routes = srv.buildRoutes()
 
 	if cfg.AdminPassword != "" {
 		if srv.admin, err = newAdminAuth(cfg.AdminPassword); err != nil {
@@ -146,6 +150,7 @@ func (srv *Server) Run(ctx context.Context) error {
 		"base_domain", srv.cfg.BaseDomain,
 		"tcp_range", fmt.Sprintf("%d-%d", srv.cfg.TCPPortMin, srv.cfg.TCPPortMax),
 		"admin", srv.AdminEnabled(),
+		"routes", len(srv.routes),
 		"tokens", srv.store.Count(),
 		"auth_hook", srv.cfg.AuthHookURL != "",
 	)

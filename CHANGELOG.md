@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `-route host=127.0.0.1:port` serves a fixed hostname from a local upstream,
+  so a panel can share the TLS listener without a reverse proxy in front.
+
+### Added
+
 - `burrow ssh` greets an interactive session with where it landed — host,
   directory and user — and names the terminal tab. Written only when a
   terminal was requested, so scp and rsync are untouched.
