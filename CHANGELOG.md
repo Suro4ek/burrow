@@ -19,6 +19,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The container image declared `/data` as a volume but left it owned by root,
+  so the image's own `nonroot` user could not write the tokens file: any
+  `docker run -v … :/data ghcr.io/suro4ek/burrow` exited immediately with a
+  permission error. The directory now ships owned by `nonroot`, and Docker
+  seeds a fresh named volume from it.
 - The container image built against a Go older than `go.mod` requires. CI now
   compares the two, since a dependency bump can raise the minimum without
   anyone touching the Dockerfile and the only symptom is a failed release.

@@ -27,6 +27,10 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \
       -o /out/burrowd ./cmd/burrowd
 
+# The final image has no shell, so the state directory has to be made here and
+# copied in below with the ownership burrowd needs.
+RUN mkdir -p /out/data
+
 
 # Distroless: no shell, no package manager, nothing for a compromised tunnel to
 # pivot into.
@@ -35,7 +39,12 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/burrowd /usr/local/bin/burrowd
 
 # The token store is rewritten whenever the panel edits a token, so it must
-# live on a writable volume.
+# live on a writable volume. Docker seeds a fresh named volume from whatever
+# the image has at this path, ownership included -- without this the volume
+# would arrive owned by root and burrowd, running as nonroot, could not write
+# its tokens file. 65532 is distroless's nonroot uid, spelled numerically
+# because a name would have to be resolved at build time.
+COPY --from=build --chown=65532:65532 /out/data /data
 VOLUME ["/data"]
 
 # Control port and HTTP. The TCP tunnel pool is a wide range and is not listed
